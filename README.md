@@ -1,7 +1,7 @@
 # WinPE Nghitr Dev
 
 > **WinPE ISO tùy chỉnh** — Công cụ cứu hộ và bảo trì Windows  
-> Thiết kế bởi **Nghitr** | v1.0.0
+> Thiết kế bởi **Nghitr.dev** | v1.0.0
 
 [![Build Status](https://img.shields.io/badge/build-in_development-yellow)]()
 [![WinPE](https://img.shields.io/badge/WinPE-amd64-blue)]()
