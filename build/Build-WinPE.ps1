@@ -400,6 +400,17 @@ if (Test-Path $assetsSource) {
 # Copy GUI app
 if (-not $SkipApp) {
     $appPublish = Join-Path $ProjectRoot "app\publish"
+    $appExe = Join-Path $appPublish "WinPE-Tool.exe"
+
+    if (-not (Test-Path $appExe)) {
+        Write-Log "GUI app executable not found in publish dir — building now..." "STEP"
+        $projPath = Join-Path $ProjectRoot "app\WinPE-Tool\WinPE-Tool.csproj"
+        if (Test-Path $projPath) {
+            $null = New-Item -ItemType Directory -Path $appPublish -Force
+            & dotnet publish $projPath -c Release -o $appPublish | Out-Null
+        }
+    }
+
     if (Test-Path $appPublish) {
         Write-Log "Copying GUI application..." "STEP"
         $appFiles = Get-ChildItem $appPublish -ErrorAction SilentlyContinue
@@ -495,50 +506,69 @@ if (-not $NoISO) {
     $isoPath = Join-Path $OutputDir $isoName
     $isoLabel = if ($Config.build.isoLabel) { $Config.build.isoLabel } else { "WinPE_Nghitr" }
 
-    # Boot files
-    $efiBoot  = "$($Script:MediaDir)\efi\microsoft\boot\efisys.bin"
-    $pcBoot   = "$($Script:MediaDir)\boot\etfsboot.com"
-
-    Write-Log "Creating ISO: $isoName" "STEP"
-    Write-Log "Label: $isoLabel" "INFO"
-
-    if (-not (Test-Path $efiBoot)) {
-        Write-Log "EFI boot file not found at $efiBoot — checking alternate location..." "WARN"
-        $efiBoot = "$($Script:WinPE_Media)\efi\microsoft\boot\efisys.bin"
+    # Boot files — search in ADK Deployment Tools Oscdimg directory or MediaDir
+    $oscdimgDir = Split-Path $Script:OscdImg -Parent
+    $pcBootCandidate  = Join-Path $oscdimgDir "etfsboot.com"
+    $efiBootCandidate = Join-Path $oscdimgDir "efisys.bin"
+    if (-not (Test-Path $efiBootCandidate)) {
+        $efiBootCandidate = Join-Path $oscdimgDir "efisys_noprompt.bin"
     }
-    if (-not (Test-Path $pcBoot)) {
-        Write-Log "PC boot file not found at $pcBoot — checking alternate location..." "WARN"
-        $pcBoot = "$($Script:WinPE_Media)\boot\etfsboot.com"
+    if (-not (Test-Path $pcBootCandidate)) {
+        $pcBootCandidate = "$($Script:MediaDir)\boot\etfsboot.com"
+    }
+    if (-not (Test-Path $efiBootCandidate)) {
+        $efiBootCandidate = "$($Script:MediaDir)\efi\microsoft\boot\efisys.bin"
     }
 
-    # Build oscdimg arguments for UEFI + BIOS dual boot
-    $oscdimgArgs = @(
-        "-m",             # Ignore maximum size
-        "-o",             # Optimize storage
-        "-u2",            # UDF file system
-        "-udfver102",     # UDF 1.02
-        "-l$isoLabel",    # Volume label
-        "-bootdata:2`#p0,e,b`"$pcBoot`"`#pEF,e,b`"$efiBoot`""  # Dual boot: BIOS + UEFI
-        "`"$($Script:MediaDir)`"",
-        "`"$isoPath`""
-    )
+    if (-not (Test-Path $pcBootCandidate)) {
+        Write-BuildError "PC boot file (etfsboot.com) not found in ADK or MediaDir."
+    }
+    if (-not (Test-Path $efiBootCandidate)) {
+        Write-BuildError "EFI boot file (efisys.bin) not found in ADK or MediaDir."
+    }
 
-    Write-Log "Running oscdimg..." "STEP"
+    # oscdimg's -bootdata switch cannot handle embedded quotes with spaces.
+    # Stage boot files to a root-level temporary path without spaces.
+    $driveRoot = [System.IO.Path]::GetPathRoot($ProjectRoot)
+    if (-not $driveRoot) { $driveRoot = "$($env:SystemDrive)\" }
+    $bootBinsDir = Join-Path $driveRoot "WinPE_BootBins"
+
     try {
-        $proc = Start-Process -FilePath $Script:OscdImg `
-            -ArgumentList $oscdimgArgs `
-            -Wait -PassThru -NoNewWindow `
-            -RedirectStandardOutput "$OutputDir\oscdimg.log" `
-            -RedirectStandardError "$OutputDir\oscdimg.err"
+        $null = New-Item -ItemType Directory -Path $bootBinsDir -Force
+        Copy-Item $pcBootCandidate "$bootBinsDir\etfsboot.com" -Force
+        Copy-Item $efiBootCandidate "$bootBinsDir\efisys.bin" -Force
 
-        if ($proc.ExitCode -eq 0) {
+        $pcBoot  = "$bootBinsDir\etfsboot.com"
+        $efiBoot = "$bootBinsDir\efisys.bin"
+
+        # Build oscdimg arguments for UEFI + BIOS dual boot
+        $bootData = "2#p0,e,b$pcBoot#pEF,e,b$efiBoot"
+
+        Write-Log "Running oscdimg..." "STEP"
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $Script:OscdImg
+        $psi.Arguments = "-m -o -u2 -udfver102 -l$isoLabel -bootdata:$bootData `"$($Script:MediaDir)`" `"$isoPath`""
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+
+        $p = [System.Diagnostics.Process]::Start($psi)
+        $stdout = $p.StandardOutput.ReadToEnd()
+        $stderr = $p.StandardError.ReadToEnd()
+        $p.WaitForExit()
+
+        Add-Content -Path "$OutputDir\oscdimg.log" -Value $stdout -Encoding UTF8 -ErrorAction SilentlyContinue
+        if ($stderr) { Add-Content -Path "$OutputDir\oscdimg.err" -Value $stderr -Encoding UTF8 -ErrorAction SilentlyContinue }
+
+        if ($p.ExitCode -eq 0 -and (Test-Path $isoPath)) {
             Write-Log "ISO created successfully!" "SUCCESS"
         } else {
-            $errContent = Get-Content "$OutputDir\oscdimg.err" -ErrorAction SilentlyContinue
-            Write-BuildError "oscdimg failed (exit $($proc.ExitCode)): $errContent"
+            Write-BuildError "oscdimg failed (exit $($p.ExitCode)): $stderr $stdout"
         }
-    } catch {
-        Write-BuildError "oscdimg execution failed: $_"
+    } finally {
+        if (Test-Path $bootBinsDir) {
+            Remove-Item $bootBinsDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 
     # ─────────────────────────────────────────────────────────────────────────
