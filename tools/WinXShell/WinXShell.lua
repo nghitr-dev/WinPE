@@ -27,12 +27,8 @@ function App:Customization()
   -- 中文(Chinese): 设置 任务栏 时钟显示信息
   -- English: Set the display text of the taskbar clock
   -- WxsHandler.TrayClockTextFormatter = nil
-
-  if os.info('locale') == 'zh-CN' then
-    -- WxsHandler.TrayClockTextFormatter = TrayClockTextFormatter_zhCN
-  elseif os.info('locale') == 'en-US' then
-    -- WxsHandler.TrayClockTextFormatter = TrayClockTextFormatter_enUS
-  end
+  -- Set taskbar clock format (Time + Date)
+  WxsHandler.TrayClockTextFormatter = TrayClockTextFormatter_enUS
 end
 
 function App:onLoad()
