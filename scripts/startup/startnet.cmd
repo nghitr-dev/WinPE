@@ -25,12 +25,12 @@ goto launch_app
 
 :launch_winxshell1
 echo [WinPE] Dang khoi dong Windows Desktop Shell...
-start "" "X:\WinPE\WinXShell\WinXShell.exe" -winpe -shell
+start "" "X:\WinPE\WinXShell\WinXShell.exe" -regist -shell
 goto wait_shell
 
 :launch_winxshell2
 echo [WinPE] Dang khoi dong Windows Desktop Shell...
-start "" "X:\WinPE\Tools\WinXShell\WinXShell.exe" -winpe -shell
+start "" "X:\WinPE\Tools\WinXShell\WinXShell.exe" -regist -shell
 goto wait_shell
 
 :wait_shell

@@ -446,47 +446,85 @@ if (Test-Path $winxshellSrc) {
     Write-Log "WinXShell Desktop Shell integrated." "SUCCESS"
 }
 
-# Create desktop shortcuts in Default User Desktop
+# Create Anhdv-style desktop shortcuts in Default User Desktop
 $desktopDir = "$($Script:MountDir)\Users\Default\Desktop"
 $null = New-Item -ItemType Directory -Path $desktopDir -Force
+
+# Start Menu programs directory
+$startMenuDir = "$($Script:MountDir)\ProgramData\Microsoft\Windows\Start Menu\Programs"
+$null = New-Item -ItemType Directory -Path $startMenuDir -Force
+
+# Quick Launch / Taskbar pinned directory
+$quickLaunchDir = "$($Script:MountDir)\Users\Default\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
+$null = New-Item -ItemType Directory -Path $quickLaunchDir -Force
 
 try {
     $wsh = New-Object -ComObject WScript.Shell
 
-    $lnk = $wsh.CreateShortcut("$desktopDir\WinPE Nghitr Dev.lnk")
-    $lnk.TargetPath = "X:\WinPE\WinPE-Tool.exe"
-    $lnk.WorkingDirectory = "X:\WinPE"
-    $lnk.IconLocation = "X:\WinPE\WinPE-Tool.exe,0"
-    $lnk.Description = "WinPE Nghitr Dev - Cong cu cuu ho Windows"
-    $lnk.Save()
+    # Helper function to create shortcuts
+    function Create-Lnk($path, $target, $args = "", $icon = "", $desc = "") {
+        $parent = Split-Path $path -Parent
+        if (-not (Test-Path $parent)) { $null = New-Item -ItemType Directory -Path $parent -Force }
+        $l = $wsh.CreateShortcut($path)
+        $l.TargetPath = $target
+        if ($args) { $l.Arguments = $args }
+        if ($icon) { $l.IconLocation = $icon }
+        if ($desc) { $l.Description = $desc }
+        $l.WorkingDirectory = Split-Path $target -Parent
+        $l.Save()
+    }
 
-    $lnk = $wsh.CreateShortcut("$desktopDir\Command Prompt.lnk")
-    $lnk.TargetPath = "X:\Windows\System32\cmd.exe"
-    $lnk.WorkingDirectory = "X:\"
-    $lnk.Save()
+    # 1. Desktop Shortcuts (Anhdv Boot visual rescue experience)
+    Create-Lnk "$desktopDir\WinPE Nghitr Dev.lnk" "X:\WinPE\WinPE-Tool.exe" "" "X:\WinPE\WinPE-Tool.exe,0" "Trung tam cuu ho he thong WinPE Nghitr Dev"
+    Create-Lnk "$desktopDir\Phan Vung O Dia (Disk).lnk" "X:\WinPE\WinPE-Tool.exe" "disk" "X:\Windows\System32\shell32.dll,8" "Quan ly o dia va phan vung"
+    Create-Lnk "$desktopDir\Cuu Ho Windows (Recovery).lnk" "X:\WinPE\WinPE-Tool.exe" "recovery" "X:\Windows\System32\shell32.dll,220" "Cuu ho Windows Boot, BCD, DISM, SFC"
+    Create-Lnk "$desktopDir\Sao Luu & Phuc Hoi (Backup).lnk" "X:\WinPE\WinPE-Tool.exe" "backup" "X:\Windows\System32\shell32.dll,259" "Sao luu va phuc hoi WIM, Robocopy"
+    Create-Lnk "$desktopDir\Quan Ly File (Explorer).lnk" "X:\WinPE\WinPE-Tool.exe" "filemanager" "X:\Windows\System32\shell32.dll,3" "Trinh quan ly file va phuc hoi du lieu"
+    Create-Lnk "$desktopDir\Doi Mat Khau (Account).lnk" "X:\WinPE\WinPE-Tool.exe" "account" "X:\Windows\System32\shell32.dll,268" "Reset mat khau va quan ly tai khoan Windows"
+    Create-Lnk "$desktopDir\Thong Tin Phan Cung.lnk" "X:\WinPE\WinPE-Tool.exe" "hardware" "X:\Windows\System32\shell32.dll,15" "Thong tin chi tiet phan cung CPU, RAM, Disk"
+    Create-Lnk "$desktopDir\Quan Ly Driver.lnk" "X:\WinPE\WinPE-Tool.exe" "drivers" "X:\Windows\System32\shell32.dll,71" "Cai dat va sao luu Driver"
+    Create-Lnk "$desktopDir\Ket Noi Mang (Network).lnk" "X:\WinPE\WinPE-Tool.exe" "network" "X:\Windows\System32\shell32.dll,17" "Quan ly ket noi Mang va WiFi"
+    Create-Lnk "$desktopDir\Tien Ich He Thong.lnk" "X:\WinPE\WinPE-Tool.exe" "tools" "X:\Windows\System32\shell32.dll,166" "Registry, Service, Don dep he thong"
+    Create-Lnk "$desktopDir\Command Prompt.lnk" "X:\Windows\System32\cmd.exe" "" "X:\Windows\System32\cmd.exe,0" "Cua so lenh Windows"
+    Create-Lnk "$desktopDir\PowerShell.lnk" "X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" "" "" "Windows PowerShell"
+    Create-Lnk "$desktopDir\Notepad.lnk" "X:\Windows\System32\notepad.exe" "" "X:\Windows\System32\notepad.exe,0" "Trinh soan thao van ban"
+    Create-Lnk "$desktopDir\Khoi Dong Lai (Reboot).lnk" "X:\Windows\System32\wpeutil.exe" "Reboot" "X:\Windows\System32\shell32.dll,238" "Khoi dong lai may tinh"
+    Create-Lnk "$desktopDir\Tat May (Shutdown).lnk" "X:\Windows\System32\wpeutil.exe" "Shutdown" "X:\Windows\System32\shell32.dll,27" "Tat may tinh"
 
-    $lnk = $wsh.CreateShortcut("$desktopDir\PowerShell.lnk")
-    $lnk.TargetPath = "X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
-    $lnk.WorkingDirectory = "X:\"
-    $lnk.Save()
+    # 2. Start Menu Categorized Programs
+    Create-Lnk "$startMenuDir\1. Cong Cu He Thong\WinPE Nghitr Dev.lnk" "X:\WinPE\WinPE-Tool.exe" "" "X:\WinPE\WinPE-Tool.exe,0"
+    Create-Lnk "$startMenuDir\1. Cong Cu He Thong\Command Prompt.lnk" "X:\Windows\System32\cmd.exe" "" "X:\Windows\System32\cmd.exe,0"
+    Create-Lnk "$startMenuDir\1. Cong Cu He Thong\PowerShell.lnk" "X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+    Create-Lnk "$startMenuDir\1. Cong Cu He Thong\Registry Editor.lnk" "X:\Windows\regedit.exe"
+    Create-Lnk "$startMenuDir\1. Cong Cu He Thong\Task Manager.lnk" "X:\Windows\System32\taskmgr.exe"
 
-    $lnk = $wsh.CreateShortcut("$desktopDir\Notepad.lnk")
-    $lnk.TargetPath = "X:\Windows\System32\notepad.exe"
-    $lnk.Save()
+    Create-Lnk "$startMenuDir\2. O Dia & Phan Vung\Phan Vung O Dia (Disk).lnk" "X:\WinPE\WinPE-Tool.exe" "disk" "X:\Windows\System32\shell32.dll,8"
+    Create-Lnk "$startMenuDir\2. O Dia & Phan Vung\Diskpart Console.lnk" "X:\Windows\System32\cmd.exe" "/k diskpart" "X:\Windows\System32\cmd.exe,0"
 
-    $lnk = $wsh.CreateShortcut("$desktopDir\Reboot.lnk")
-    $lnk.TargetPath = "X:\Windows\System32\wpeutil.exe"
-    $lnk.Arguments = "Reboot"
-    $lnk.IconLocation = "X:\Windows\System32\shell32.dll,238"
-    $lnk.Save()
+    Create-Lnk "$startMenuDir\3. Sao Luu & Phuc Hoi\Sao Luu & Phuc Hoi (Backup).lnk" "X:\WinPE\WinPE-Tool.exe" "backup" "X:\Windows\System32\shell32.dll,259"
+    Create-Lnk "$startMenuDir\4. Cuu Ho Windows\Cuu Ho Windows (Recovery).lnk" "X:\WinPE\WinPE-Tool.exe" "recovery" "X:\Windows\System32\shell32.dll,220"
+    Create-Lnk "$startMenuDir\5. Mat Khau Windows\Doi Mat Khau (Account).lnk" "X:\WinPE\WinPE-Tool.exe" "account" "X:\Windows\System32\shell32.dll,268"
 
-    $lnk = $wsh.CreateShortcut("$desktopDir\Shutdown.lnk")
-    $lnk.TargetPath = "X:\Windows\System32\wpeutil.exe"
-    $lnk.Arguments = "Shutdown"
-    $lnk.IconLocation = "X:\Windows\System32\shell32.dll,27"
-    $lnk.Save()
+    Create-Lnk "$startMenuDir\6. Phan Cung & Driver\Thong Tin Phan Cung.lnk" "X:\WinPE\WinPE-Tool.exe" "hardware" "X:\Windows\System32\shell32.dll,15"
+    Create-Lnk "$startMenuDir\6. Phan Cung & Driver\Quan Ly Driver.lnk" "X:\WinPE\WinPE-Tool.exe" "drivers" "X:\Windows\System32\shell32.dll,71"
+    Create-Lnk "$startMenuDir\6. Phan Cung & Driver\Ket Noi Mang.lnk" "X:\WinPE\WinPE-Tool.exe" "network" "X:\Windows\System32\shell32.dll,17"
 
-    Write-Log "Desktop shortcuts created on WinPE desktop." "SUCCESS"
+    Create-Lnk "$startMenuDir\7. Tien Ich Khac\Quan Ly File.lnk" "X:\WinPE\WinPE-Tool.exe" "filemanager" "X:\Windows\System32\shell32.dll,3"
+    Create-Lnk "$startMenuDir\7. Tien Ich Khac\Tien Ich He Thong.lnk" "X:\WinPE\WinPE-Tool.exe" "tools" "X:\Windows\System32\shell32.dll,166"
+    Create-Lnk "$startMenuDir\7. Tien Ich Khac\Notepad.lnk" "X:\Windows\System32\notepad.exe" "" "X:\Windows\System32\notepad.exe,0"
+
+    # 3. Taskbar Pinning (Quick Launch)
+    Create-Lnk "$quickLaunchDir\WinPE Nghitr Dev.lnk" "X:\WinPE\WinPE-Tool.exe" "" "X:\WinPE\WinPE-Tool.exe,0"
+    Create-Lnk "$quickLaunchDir\Quan Ly File.lnk" "X:\WinPE\WinPE-Tool.exe" "filemanager" "X:\Windows\System32\shell32.dll,3"
+    Create-Lnk "$quickLaunchDir\Command Prompt.lnk" "X:\Windows\System32\cmd.exe" "" "X:\Windows\System32\cmd.exe,0"
+
+    # 4. Copy custom wallpaper to standard WinPE background
+    $customWp = Join-Path $ProjectRoot "tools\WinXShell\wallpaper.jpg"
+    if (Test-Path $customWp) {
+        Copy-Item $customWp "$($Script:MountDir)\Windows\System32\winpe.jpg" -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Log "Anhdv-style Desktop, Start Menu, and Quick Launch shortcuts created." "SUCCESS"
 } catch {
     Write-Log "Could not create desktop shortcuts: $_" "WARN"
 }

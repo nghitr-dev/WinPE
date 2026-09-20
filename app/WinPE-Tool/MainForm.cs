@@ -41,12 +41,12 @@ namespace WinPETool
         private readonly Dictionary<string, Panel> _navItems = new Dictionary<string, Panel>();
         private Panel _selectedNavItem;
 
-        public MainForm(AppConfig config)
+        public MainForm(AppConfig config, string initialPage = "dashboard")
         {
             _config = config;
             InitializeUI();
             SetupLogger();
-            LoadInitialPage();
+            NavigateTo(string.IsNullOrWhiteSpace(initialPage) ? "dashboard" : initialPage);
         }
 
         private void InitializeUI()

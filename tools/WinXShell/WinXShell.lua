@@ -50,8 +50,8 @@ function App:onFirstShellRun()
 end
 
 function App:onShell()
-  -- wxsUI('UI_WIFI', 'main.jcfg', '-notrayicon -hidewindow')
-  -- wxsUI('UI_Volume', 'main.jcfg', '-notrayicon -hidewindow')
+  wxsUI('UI_WIFI', 'main.jcfg', '-notrayicon -hidewindow')
+  wxsUI('UI_Volume', 'main.jcfg', '-notrayicon -hidewindow')
 end
 
 function App:onTimer(tid)

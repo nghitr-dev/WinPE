@@ -6,10 +6,16 @@ namespace WinPETool
     static class Program
     {
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+
+            string startPage = "dashboard";
+            if (args != null && args.Length > 0)
+            {
+                startPage = args[0].TrimStart('-', '/').ToLowerInvariant();
+            }
 
             // Global unhandled exception handler — không để crash toàn bộ app
             Application.ThreadException += (sender, e) =>
@@ -40,7 +46,7 @@ namespace WinPETool
             try
             {
                 var config = AppConfig.Load();
-                Application.Run(new MainForm(config));
+                Application.Run(new MainForm(config, startPage));
             }
             catch (Exception ex)
             {
