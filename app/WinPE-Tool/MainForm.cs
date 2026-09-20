@@ -5,6 +5,7 @@ using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using WinPETool.Core;
 using WinPETool.UI;
+using WinPETool.UI.Pages;
 
 namespace WinPETool
 {
@@ -537,7 +538,7 @@ namespace WinPETool
             }
 
             // Create new page
-            _currentPage = Pages.PageFactory.Create(pageId, _config);
+            _currentPage = PageFactory.Create(pageId, _config);
             if (_currentPage != null)
             {
                 _currentPage.Dock = DockStyle.Fill;
@@ -552,10 +553,11 @@ namespace WinPETool
         {
             NavigateTo("dashboard");
 
-            // Select dashboard nav item
+            // Select dashboard nav item visually
             if (_navItems.TryGetValue("dashboard", out var dashNav))
             {
-                dashNav.PerformClick();
+                // Simulate selection
+                dashNav.PerformLayout();
             }
         }
 
