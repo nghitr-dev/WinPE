@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-    WinPE Startup — Khởi động GUI hoặc fallback menu
+    WinPE Startup - Khoi dong GUI hoac fallback menu
 .DESCRIPTION
-    Chạy từ startnet.cmd sau wpeinit
-    Kiểm tra GUI app, nếu có thì khởi động, không thì hiển thị menu text
+    Chay tu startnet.cmd sau wpeinit
+    Kiem tra GUI app, neu co thi khoi dong, neu khong thi hien thi menu console
 #>
 
 $ErrorActionPreference = "Continue"
@@ -16,28 +16,30 @@ function Write-Log {
     param([string]$msg, [string]$level = "INFO")
     $ts = Get-Date -Format "HH:mm:ss"
     $line = "[$ts][$level] $msg"
-    Add-Content $LogFile $line -Encoding UTF8 -ErrorAction SilentlyContinue
+    try {
+        Add-Content -Path $LogFile -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
+    } catch {}
     Write-Host $line
 }
 
 function Show-FallbackMenu {
     Clear-Host
     Write-Host ""
-    Write-Host "  ╔══════════════════════════════════════════════╗" -ForegroundColor Cyan
-    Write-Host "  ║        WinPE Nghitr Dev  v1.0.0             ║" -ForegroundColor Cyan
-    Write-Host "  ║     Cong cu cuu ho & bao tri Windows        ║" -ForegroundColor Cyan
-    Write-Host "  ╚══════════════════════════════════════════════╝" -ForegroundColor Cyan
+    Write-Host "  ================================================" -ForegroundColor Cyan
+    Write-Host "           WinPE Nghitr Dev  v1.0.0               " -ForegroundColor Cyan
+    Write-Host "        Cong cu cuu ho & bao tri Windows          " -ForegroundColor Cyan
+    Write-Host "  ================================================" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  [GUI chua duoc build — che do Console]" -ForegroundColor Yellow
+    Write-Host "  [Che do Console du phong]" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "  1. Command Prompt" -ForegroundColor White
+    Write-Host "  1. Command Prompt (cmd.exe)" -ForegroundColor White
     Write-Host "  2. PowerShell" -ForegroundColor White
-    Write-Host "  3. Disk Info" -ForegroundColor White
-    Write-Host "  4. Network Info" -ForegroundColor White
-    Write-Host "  5. Hardware Info" -ForegroundColor White
-    Write-Host "  6. Windows Detection" -ForegroundColor White
-    Write-Host "  7. Reboot" -ForegroundColor White
-    Write-Host "  8. Shutdown" -ForegroundColor White
+    Write-Host "  3. Thong tin o dia (Disk Info)" -ForegroundColor White
+    Write-Host "  4. Thong tin mang (Network Info)" -ForegroundColor White
+    Write-Host "  5. Thong tin phan cung (Hardware Info)" -ForegroundColor White
+    Write-Host "  6. Quet tim Windows tren cac o dia" -ForegroundColor White
+    Write-Host "  7. Khoi dong lai may (Reboot)" -ForegroundColor White
+    Write-Host "  8. Tat may (Shutdown)" -ForegroundColor White
     Write-Host ""
 
     $choice = Read-Host "  Chon [1-8]"
@@ -47,26 +49,26 @@ function Show-FallbackMenu {
         "3" {
             Get-Disk | Format-Table Number, FriendlyName, Size, PartitionStyle -AutoSize
             Get-Partition | Format-Table DiskNumber, PartitionNumber, DriveLetter, Size, Type -AutoSize
-            Read-Host "Enter de tiep tuc"
+            Read-Host "Bam Enter de tiep tuc"
         }
         "4" {
             Get-NetIPConfiguration | Format-List InterfaceAlias, IPv4Address, IPv4DefaultGateway, DNSServer
-            Read-Host "Enter de tiep tuc"
+            Read-Host "Bam Enter de tiep tuc"
         }
         "5" {
             Get-WmiObject Win32_ComputerSystem | Select-Object Manufacturer, Model, TotalPhysicalMemory
             Get-WmiObject Win32_Processor | Select-Object Name, NumberOfCores, MaxClockSpeed
-            Read-Host "Enter de tiep tuc"
+            Read-Host "Bam Enter de tiep tuc"
         }
         "6" {
             $drives = Get-PSDrive -PSProvider FileSystem | Select-Object -ExpandProperty Root
             foreach ($d in $drives) {
                 $winDir = "${d}Windows"
                 if (Test-Path $winDir) {
-                    Write-Host "  ✅ Windows found at: $winDir" -ForegroundColor Green
+                    Write-Host "  [FOUND] Windows tai: $winDir" -ForegroundColor Green
                 }
             }
-            Read-Host "Enter de tiep tuc"
+            Read-Host "Bam Enter de tiep tuc"
         }
         "7" { Restart-Computer -Force }
         "8" { Stop-Computer -Force }
@@ -74,12 +76,11 @@ function Show-FallbackMenu {
     Show-FallbackMenu
 }
 
-# ─── MAIN ───────────────────────────────────────────────────
+# --- MAIN ---
 Write-Log "WinPE startup script running..." "INFO"
 Write-Log "WinPE Root: $WinPE_Root" "INFO"
 
-# Wait for wpeinit to finish
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 1
 
 # Check GUI app
 if (Test-Path $GUIApp) {
@@ -92,6 +93,6 @@ if (Test-Path $GUIApp) {
         Write-Log "GUI launch failed: $_" "ERROR"
     }
 } else {
-    Write-Log "GUI app not found at $GUIApp — using fallback menu" "WARN"
+    Write-Log "GUI app not found at $GUIApp - using fallback menu" "WARN"
     Show-FallbackMenu
 }
