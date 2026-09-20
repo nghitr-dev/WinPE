@@ -437,6 +437,60 @@ if ($toolFiles.Count -gt 0) {
     Write-Log "Tools copied." "SUCCESS"
 }
 
+# Integrate WinXShell Desktop Shell
+$winxshellSrc = Join-Path $ProjectRoot "tools\WinXShell"
+if (Test-Path $winxshellSrc) {
+    $winxshellDest = "$winpePEDir\WinXShell"
+    $null = New-Item -ItemType Directory -Path $winxshellDest -Force
+    Copy-Item "$winxshellSrc\*" $winxshellDest -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Log "WinXShell Desktop Shell integrated." "SUCCESS"
+}
+
+# Create desktop shortcuts in Default User Desktop
+$desktopDir = "$($Script:MountDir)\Users\Default\Desktop"
+$null = New-Item -ItemType Directory -Path $desktopDir -Force
+
+try {
+    $wsh = New-Object -ComObject WScript.Shell
+
+    $lnk = $wsh.CreateShortcut("$desktopDir\WinPE Nghitr Dev.lnk")
+    $lnk.TargetPath = "X:\WinPE\WinPE-Tool.exe"
+    $lnk.WorkingDirectory = "X:\WinPE"
+    $lnk.IconLocation = "X:\WinPE\WinPE-Tool.exe,0"
+    $lnk.Description = "WinPE Nghitr Dev - Cong cu cuu ho Windows"
+    $lnk.Save()
+
+    $lnk = $wsh.CreateShortcut("$desktopDir\Command Prompt.lnk")
+    $lnk.TargetPath = "X:\Windows\System32\cmd.exe"
+    $lnk.WorkingDirectory = "X:\"
+    $lnk.Save()
+
+    $lnk = $wsh.CreateShortcut("$desktopDir\PowerShell.lnk")
+    $lnk.TargetPath = "X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+    $lnk.WorkingDirectory = "X:\"
+    $lnk.Save()
+
+    $lnk = $wsh.CreateShortcut("$desktopDir\Notepad.lnk")
+    $lnk.TargetPath = "X:\Windows\System32\notepad.exe"
+    $lnk.Save()
+
+    $lnk = $wsh.CreateShortcut("$desktopDir\Reboot.lnk")
+    $lnk.TargetPath = "X:\Windows\System32\wpeutil.exe"
+    $lnk.Arguments = "Reboot"
+    $lnk.IconLocation = "X:\Windows\System32\shell32.dll,238"
+    $lnk.Save()
+
+    $lnk = $wsh.CreateShortcut("$desktopDir\Shutdown.lnk")
+    $lnk.TargetPath = "X:\Windows\System32\wpeutil.exe"
+    $lnk.Arguments = "Shutdown"
+    $lnk.IconLocation = "X:\Windows\System32\shell32.dll,27"
+    $lnk.Save()
+
+    Write-Log "Desktop shortcuts created on WinPE desktop." "SUCCESS"
+} catch {
+    Write-Log "Could not create desktop shortcuts: $_" "WARN"
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # STEP 10: CONFIGURE STARTUP SCRIPT
 # ─────────────────────────────────────────────────────────────────────────────

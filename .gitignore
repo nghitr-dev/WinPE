@@ -4,8 +4,10 @@ WinPE_Output/
 *.iso
 
 # WinPE working directories
+source/
 source/working/
 source/mount/
+source/media/
 *.wim
 
 # App build artifacts

@@ -1,7 +1,7 @@
 @echo off
 :: ============================================================
 :: WinPE Nghitr Dev - Startup Script
-:: startnet.cmd - Chay tu dong khi WinPE khoi dong
+:: startnet.cmd - Chay tu dong khi WinPE boot
 :: ============================================================
 
 wpeinit
@@ -22,25 +22,29 @@ if not exist "X:\WinPE\Logs" mkdir "X:\WinPE\Logs"
 echo [%date% %time%] WinPE startup >> "X:\WinPE\Logs\startup.log"
 echo [%date% %time%] wpeinit completed >> "X:\WinPE\Logs\startup.log"
 
-:: Kiem tra va khoi chay truc tiep GUI app
-if exist "X:\WinPE\WinPE-Tool.exe" (
-    echo [WinPE] Phat hien GUI app, dang khoi dong WinPE-Tool...
-    echo [%date% %time%] Launching WinPE-Tool.exe >> "X:\WinPE\Logs\startup.log"
-    start "" "X:\WinPE\WinPE-Tool.exe"
-    goto shell
+:: Khoi dong Desktop Shell (WinXShell) - Tao Taskbar, Start Menu, Desktop Icons, Wallpaper
+if exist "X:\WinPE\Tools\WinXShell\WinXShell.exe" (
+    echo [WinPE] Dang khoi dong Desktop Shell (WinXShell)...
+    echo [%date% %time%] Launching WinXShell... >> "X:\WinPE\Logs\startup.log"
+    start "" "X:\WinPE\Tools\WinXShell\WinXShell.exe" -winpe -shell
+    timeout /t 2 /nobreak >nul 2>&1
+) else if exist "X:\WinPE\WinXShell\WinXShell.exe" (
+    echo [WinPE] Dang khoi dong Desktop Shell (WinXShell)...
+    start "" "X:\WinPE\WinXShell\WinXShell.exe" -winpe -shell
+    timeout /t 2 /nobreak >nul 2>&1
 )
 
-:: Neu GUI chua co, chay script Start-GUI.ps1
-if exist "X:\WinPE\Scripts\startup\Start-GUI.ps1" (
-    echo [WinPE] Dang chay script Start-GUI.ps1...
-    powershell.exe -ExecutionPolicy Bypass -NoLogo -File "X:\WinPE\Scripts\startup\Start-GUI.ps1"
-    goto shell
+:: Khoi dong ung dung cuu ho WinPE-Tool len giua Desktop
+if exist "X:\WinPE\WinPE-Tool.exe" (
+    echo [WinPE] Dang mo ung dung WinPE-Tool...
+    echo [%date% %time%] Launching WinPE-Tool.exe >> "X:\WinPE\Logs\startup.log"
+    start "" "X:\WinPE\WinPE-Tool.exe"
 )
 
 :shell
 echo.
 echo ============================================================
-echo [WinPE] He thong san sang. Khoi dong PowerShell...
+echo [WinPE] He thong san sang. PowerShell hoat dong o che do cho.
 echo ============================================================
 echo.
 powershell.exe -ExecutionPolicy Bypass -NoExit
