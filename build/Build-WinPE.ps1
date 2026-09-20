@@ -42,7 +42,6 @@ param(
     [switch]$Verbose2
 )
 
-Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -227,16 +226,19 @@ $Script:WorkDir  = Join-Path $ProjectRoot "source\working"
 $Script:MountDir = Join-Path $ProjectRoot "source\mount"
 $Script:MediaDir = Join-Path $ProjectRoot "source\media"
 
-if ($Clean -and (Test-Path $Script:WorkDir)) {
-    Write-Log "Cleaning working directory..." "WARN"
-    # Safety: check mount first
-    $mountedImages = Get-WindowsImage -Mounted -ErrorAction SilentlyContinue
-    if ($mountedImages | Where-Object { $_.MountPath -eq $Script:MountDir }) {
-        Write-Log "Detected mounted WIM at $($Script:MountDir) — unmounting first..." "WARN"
-        Dismount-WindowsImage -Path $Script:MountDir -Discard -ErrorAction SilentlyContinue
-    }
-    Remove-Item $Script:WorkDir -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item $Script:MediaDir -Recurse -Force -ErrorAction SilentlyContinue
+if ($Clean) {
+    Write-Log "Cleaning previous build state..." "WARN"
+    try {
+        $mountedImages = Get-WindowsImage -Mounted -ErrorAction SilentlyContinue
+        if ($mountedImages | Where-Object { $_.MountPath -eq $Script:MountDir }) {
+            Write-Log "Detected mounted WIM at $($Script:MountDir) — unmounting (discard)..." "WARN"
+            Dismount-WindowsImage -Path $Script:MountDir -Discard -ErrorAction SilentlyContinue
+        }
+    } catch {}
+
+    if (Test-Path $Script:WorkDir) { Remove-Item $Script:WorkDir -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path $Script:MediaDir) { Remove-Item $Script:MediaDir -Recurse -Force -ErrorAction SilentlyContinue }
+    if (Test-Path $Script:MountDir) { Remove-Item $Script:MountDir -Recurse -Force -ErrorAction SilentlyContinue }
     Write-Log "Working directory cleaned." "SUCCESS"
 }
 
@@ -320,10 +322,10 @@ if ($SkipDrivers) {
     Write-Log "Skipping driver injection (--SkipDrivers)" "WARN"
 } else {
     $DriversRoot = Join-Path $ProjectRoot "drivers"
-    $driverFiles = Get-ChildItem $DriversRoot -Recurse -Include "*.inf" -ErrorAction SilentlyContinue
+    $driverFiles = @(Get-ChildItem $DriversRoot -Recurse -Include "*.inf" -ErrorAction SilentlyContinue)
 
     if ($driverFiles.Count -eq 0) {
-        Write-Log "No drivers found in $DriversRoot — skipping." "WARN"
+        Write-Log "No drivers found in $DriversRoot — skipping." "INFO"
         Write-Log "Tip: thêm driver .inf vào thư mục drivers\storage\ drivers\network\ v.v." "INFO"
     } else {
         Write-Log "Found $($driverFiles.Count) driver(s) to inject..." "STEP"
@@ -413,7 +415,7 @@ if (-not $SkipApp) {
 
     if (Test-Path $appPublish) {
         Write-Log "Copying GUI application..." "STEP"
-        $appFiles = Get-ChildItem $appPublish -ErrorAction SilentlyContinue
+        $appFiles = @(Get-ChildItem $appPublish -ErrorAction SilentlyContinue)
         if ($appFiles.Count -gt 0) {
             Copy-Item "$appPublish\*" "$winpePEDir\" -Recurse -Force
             Write-Log "GUI application copied ($($appFiles.Count) files)." "SUCCESS"
@@ -428,7 +430,7 @@ if (-not $SkipApp) {
 
 # Copy tools
 $toolsSource = Join-Path $ProjectRoot "tools"
-$toolFiles = Get-ChildItem $toolsSource -Recurse -ErrorAction SilentlyContinue
+$toolFiles = @(Get-ChildItem $toolsSource -Recurse -File -ErrorAction SilentlyContinue)
 if ($toolFiles.Count -gt 0) {
     Write-Log "Copying tools ($($toolFiles.Count) items)..." "STEP"
     Copy-Item "$toolsSource\*" "$winpePEDir\Tools\" -Recurse -Force -ErrorAction SilentlyContinue
