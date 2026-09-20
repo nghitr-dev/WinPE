@@ -10,6 +10,8 @@ namespace WinPETool.Core
     {
         public string Drive          { get; set; }
         public string WindowsPath    { get; set; }
+        public string SystemDrive    => Drive;
+        public string WindowsDirectory => WindowsPath;
         public string Version        { get; set; }
         public string Edition        { get; set; }
         public string SystemRoot     { get; set; }
@@ -24,6 +26,8 @@ namespace WinPETool.Core
     /// </summary>
     public static class WindowsFinder
     {
+        public static List<WindowsInstallation> FindInstallations() => FindAll();
+
         public static List<WindowsInstallation> FindAll()
         {
             var results = new List<WindowsInstallation>();

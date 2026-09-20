@@ -17,7 +17,6 @@ namespace WinPETool.UI.Pages
     /// </summary>
     public class RecoveryPage : Panel
     {
-        private ComboBox _windowsSelector;
         private ListBox  _winList;
         private RichTextBox _output;
         private Button   _scanBtn;
@@ -274,7 +273,6 @@ namespace WinPETool.UI.Pages
             { AppendOut("⛔ Rebuild BCD bị hủy.\n", Theme.TextMuted); return; }
 
             AppendOut("\n▶ Rebuilding BCD...\n", Theme.TextWarning, Theme.FontHeader);
-            var script = "sel disk 0\nsel vol 0\nassign letter=T\nexit";
             // bootrec /rebuildbcd
             RunTool("bootrec.exe", "/rebuildbcd", 60000);
         }

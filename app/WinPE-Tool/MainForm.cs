@@ -36,7 +36,6 @@ namespace WinPETool
         // Status labels
         private Label _statusLabel;
         private Label _statusTime;
-        private Label _versionLabel;
 
         // Nav items tracking
         private readonly Dictionary<string, Panel> _navItems = new Dictionary<string, Panel>();
