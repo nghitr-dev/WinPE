@@ -1,0 +1,81 @@
+{
+  "project": {
+    "name": "WinPE_Nghitr-dev",
+    "displayName": "WinPE Nghitr Dev",
+    "version": "1.0.0",
+    "author": "Nghitr",
+    "description": "WinPE ISO tùy chỉnh với GUI, bộ công cụ cứu hộ và bảo trì Windows",
+    "language": "vi-VN",
+    "secondaryLanguage": "en-US"
+  },
+  "branding": {
+    "windowTitle": "WinPE Nghitr Dev — Công cụ cứu hộ Windows",
+    "logoFile": "assets\\logo\\winpe-logo.png",
+    "wallpaperFile": "assets\\wallpaper\\winpe-bg.png",
+    "primaryColor": "#1A2744",
+    "accentColor": "#00AAFF",
+    "secondaryColor": "#0D1B35"
+  },
+  "winpe": {
+    "architecture": "amd64",
+    "locale": "vi-VN",
+    "fallbackLocale": "en-US",
+    "timezone": "SE Asia Standard Time",
+    "startupScript": "scripts\\startup\\startnet.cmd",
+    "guiExecutable": "WinPE-Tool.exe"
+  },
+  "build": {
+    "adkRoot": "",
+    "winpeAddonRoot": "",
+    "workingDir": "source\\working",
+    "mountDir": "source\\mount",
+    "outputDir": "output",
+    "isoLabel": "WinPE_Nghitr",
+    "isoName": "WinPE_Nghitr-dev-v1.0.0.iso",
+    "includeDrivers": true,
+    "packages": [
+      "WinPE-WMI",
+      "WinPE-NetFx",
+      "WinPE-Scripting",
+      "WinPE-PowerShell",
+      "WinPE-StorageWMI",
+      "WinPE-DismCmdlets",
+      "WinPE-EnhancedStorage",
+      "WinPE-FMAPI",
+      "WinPE-HTA",
+      "WinPE-Dot3Svc",
+      "WinPE-RNDIS",
+      "WinPE-SecureStartup"
+    ]
+  },
+  "tools": {
+    "manifestFile": "config\\tools-manifest.json",
+    "toolsDir": "tools"
+  },
+  "logging": {
+    "enabled": true,
+    "logDir": "X:\\WinPE\\Logs",
+    "logFile": "WinPE_Nghitr.log",
+    "maxLogSizeMB": 50,
+    "level": "INFO"
+  },
+  "ui": {
+    "resolution": "1920x1080",
+    "sidebarWidth": 260,
+    "defaultPage": "Dashboard",
+    "showSplash": true,
+    "splashDurationMs": 2000,
+    "animationsEnabled": true
+  },
+  "safety": {
+    "requireConfirmationForDestructive": true,
+    "destructiveOperations": [
+      "FormatPartition",
+      "DeletePartition",
+      "CleanDisk",
+      "OverwriteBCD",
+      "RestoreImage",
+      "ResetPassword"
+    ]
+  }
+}

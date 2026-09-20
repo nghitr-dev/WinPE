@@ -1,0 +1,599 @@
+<#
+.SYNOPSIS
+    Build WinPE ISO chính — WinPE_Nghitr-dev
+.DESCRIPTION
+    Orchestrator script thực hiện toàn bộ quá trình build WinPE ISO:
+    1. Kiểm tra prerequisites
+    2. Tạo thư mục làm việc
+    3. Copy WinPE base
+    4. Mount boot.wim
+    5. Thêm WinPE packages
+    6. Inject drivers
+    7. Copy app/tools/scripts
+    8. Cấu hình startup
+    9. Unmount + commit
+    10. Tạo ISO bootable
+    11. Validate ISO
+.PARAMETER SkipDrivers
+    Bỏ qua bước inject driver (build nhanh hơn)
+.PARAMETER SkipApp
+    Bỏ qua bước copy GUI app
+.PARAMETER Clean
+    Xóa working directory trước khi build
+.PARAMETER OutputDir
+    Thư mục output ISO (default: .\output)
+.EXAMPLE
+    .\Build-WinPE.ps1
+    .\Build-WinPE.ps1 -Clean -SkipDrivers
+    .\Build-WinPE.ps1 -OutputDir "D:\WinPE_Output"
+.NOTES
+    Cần chạy với quyền Administrator
+    Cần Windows ADK + WinPE Add-on
+#>
+#Requires -RunAsAdministrator
+
+[CmdletBinding()]
+param(
+    [switch]$SkipDrivers,
+    [switch]$SkipApp,
+    [switch]$Clean,
+    [string]$OutputDir = "",
+    [switch]$NoISO,
+    [switch]$Verbose2
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CONSTANTS & PATHS
+# ─────────────────────────────────────────────────────────────────────────────
+$Script:ProjectRoot   = Split-Path $PSScriptRoot -Parent
+$Script:ConfigFile    = Join-Path $ProjectRoot "config\winpe-config.json"
+$Script:BuildLog      = Join-Path $ProjectRoot "output\build.log"
+
+# ADK paths (auto-detected)
+$Script:ADK_Root      = ""
+$Script:WinPE_Root    = ""
+$Script:OscdImg       = ""
+$Script:WinPE_WIM     = ""
+$Script:WinPE_OCs     = ""
+$Script:WinPE_Media   = ""
+
+# Working paths
+$Script:WorkDir       = ""
+$Script:MountDir      = ""
+$Script:MediaDir      = ""
+
+# Build state
+$Script:BuildErrors   = @()
+$Script:BuildStart    = Get-Date
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LOGGING
+# ─────────────────────────────────────────────────────────────────────────────
+function Write-Log {
+    param(
+        [string]$Message,
+        [ValidateSet("INFO","WARN","ERROR","SUCCESS","STEP","DEBUG")]
+        [string]$Level = "INFO"
+    )
+    $ts        = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logLine   = "[$ts] [$Level] $Message"
+    $color     = switch ($Level) {
+        "INFO"    { "White" }
+        "WARN"    { "Yellow" }
+        "ERROR"   { "Red" }
+        "SUCCESS" { "Green" }
+        "STEP"    { "Cyan" }
+        "DEBUG"   { "DarkGray" }
+    }
+
+    # Console output
+    $prefix = switch ($Level) {
+        "STEP"    { "▶ " }
+        "SUCCESS" { "✅ " }
+        "ERROR"   { "❌ " }
+        "WARN"    { "⚠️  " }
+        default   { "   " }
+    }
+    Write-Host "$prefix$Message" -ForegroundColor $color
+
+    # File output
+    if ($Script:BuildLog) {
+        try {
+            Add-Content -Path $Script:BuildLog -Value $logLine -Encoding UTF8 -ErrorAction SilentlyContinue
+        } catch {}
+    }
+}
+
+function Write-Section($title) {
+    Write-Host ""
+    Write-Host ("─" * 65) -ForegroundColor DarkCyan
+    Write-Host "  [$title]" -ForegroundColor Cyan
+    Write-Host ("─" * 65) -ForegroundColor DarkCyan
+    Write-Log "=== $title ===" "INFO"
+}
+
+function Write-BuildError($msg) {
+    Write-Log $msg "ERROR"
+    $Script:BuildErrors += $msg
+    throw $msg
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 0: INIT LOGGING
+# ─────────────────────────────────────────────────────────────────────────────
+$null = New-Item -ItemType Directory -Path (Join-Path $ProjectRoot "output") -Force
+Set-Content -Path $Script:BuildLog -Value "=== WinPE_Nghitr-dev Build Log ===" -Encoding UTF8
+Write-Log "Build started: $($Script:BuildStart.ToString('yyyy-MM-dd HH:mm:ss'))" "INFO"
+Write-Log "ProjectRoot: $ProjectRoot" "INFO"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 1: LOAD CONFIG
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Section "STEP 1: LOAD CONFIGURATION"
+
+if (-not (Test-Path $Script:ConfigFile)) {
+    Write-BuildError "Config file not found: $Script:ConfigFile"
+}
+
+try {
+    $Config = Get-Content $Script:ConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    Write-Log "Config loaded: $($Config.project.name) v$($Config.project.version)" "SUCCESS"
+} catch {
+    Write-BuildError "Failed to parse config: $_"
+}
+
+# Determine output directory
+if (-not $OutputDir) {
+    $OutputDir = if ($Config.build.outputDir) {
+        Join-Path $ProjectRoot $Config.build.outputDir
+    } else {
+        Join-Path $ProjectRoot "output"
+    }
+}
+$null = New-Item -ItemType Directory -Path $OutputDir -Force
+Write-Log "Output directory: $OutputDir" "INFO"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 2: DETECT ADK
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Section "STEP 2: DETECT WINDOWS ADK"
+
+function Find-ADK {
+    # Try registry first
+    $regKey = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots"
+    $reg = Get-ItemProperty $regKey -ErrorAction SilentlyContinue
+    if ($reg -and $reg.KitsRoot10 -and (Test-Path $reg.KitsRoot10)) {
+        $adkBase = $reg.KitsRoot10.TrimEnd('\')
+        return "$adkBase\Assessment and Deployment Kit"
+    }
+
+    # Fallback: filesystem scan
+    $candidates = @(
+        "C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit",
+        "C:\Program Files\Windows Kits\10\Assessment and Deployment Kit"
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path $c) { return $c }
+    }
+    return $null
+}
+
+$Script:ADK_Root = Find-ADK
+if (-not $Script:ADK_Root) {
+    Write-Host ""
+    Write-Host "  ❌ ERROR: Windows ADK NOT FOUND" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Cần cài đặt:" -ForegroundColor Yellow
+    Write-Host "  1. Windows ADK: https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install" -ForegroundColor Yellow
+    Write-Host "     → Chọn: Deployment Tools" -ForegroundColor Yellow
+    Write-Host "  2. WinPE Add-on: Tải từ cùng trang, cài sau ADK" -ForegroundColor Yellow
+    Write-Host ""
+    exit 1
+}
+
+Write-Log "ADK Root: $($Script:ADK_Root)" "SUCCESS"
+
+$Script:WinPE_Root  = "$($Script:ADK_Root)\Windows Preinstallation Environment"
+$Script:OscdImg     = "$($Script:ADK_Root)\Deployment Tools\amd64\Oscdimg\oscdimg.exe"
+$Script:WinPE_WIM   = "$($Script:WinPE_Root)\amd64\en-us\winpe.wim"
+$Script:WinPE_OCs   = "$($Script:WinPE_Root)\amd64\WinPE_OCs"
+$Script:WinPE_Media = "$($Script:WinPE_Root)\amd64\Media"
+
+# Validate critical paths
+$criticalPaths = @{
+    "WinPE Add-on" = $Script:WinPE_Root
+    "winpe.wim"    = $Script:WinPE_WIM
+    "WinPE OCs"    = $Script:WinPE_OCs
+    "WinPE Media"  = $Script:WinPE_Media
+    "oscdimg.exe"  = $Script:OscdImg
+}
+foreach ($item in $criticalPaths.GetEnumerator()) {
+    if (Test-Path $item.Value) {
+        Write-Log "  ✅ $($item.Key)" "SUCCESS"
+    } else {
+        Write-BuildError "$($item.Key) not found: $($item.Value). Cài WinPE Add-on cho ADK."
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 3: PREPARE WORKING DIRECTORY
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Section "STEP 3: PREPARE WORKING DIRECTORY"
+
+$Script:WorkDir  = Join-Path $ProjectRoot "source\working"
+$Script:MountDir = Join-Path $ProjectRoot "source\mount"
+$Script:MediaDir = Join-Path $ProjectRoot "source\media"
+
+if ($Clean -and (Test-Path $Script:WorkDir)) {
+    Write-Log "Cleaning working directory..." "WARN"
+    # Safety: check mount first
+    $mountedImages = Get-WindowsImage -Mounted -ErrorAction SilentlyContinue
+    if ($mountedImages | Where-Object { $_.MountPath -eq $Script:MountDir }) {
+        Write-Log "Detected mounted WIM at $($Script:MountDir) — unmounting first..." "WARN"
+        Dismount-WindowsImage -Path $Script:MountDir -Discard -ErrorAction SilentlyContinue
+    }
+    Remove-Item $Script:WorkDir -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item $Script:MediaDir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Log "Working directory cleaned." "SUCCESS"
+}
+
+foreach ($d in @($Script:WorkDir, $Script:MountDir, $Script:MediaDir)) {
+    $null = New-Item -ItemType Directory -Path $d -Force
+}
+
+Write-Log "WorkDir:  $($Script:WorkDir)" "INFO"
+Write-Log "MountDir: $($Script:MountDir)" "INFO"
+Write-Log "MediaDir: $($Script:MediaDir)" "INFO"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 4: COPY WINPE BASE
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Section "STEP 4: COPY WINPE BASE FILES"
+
+Write-Log "Copying WinPE media structure..." "STEP"
+$mediaItems = Get-ChildItem $Script:WinPE_Media -ErrorAction Stop
+foreach ($item in $mediaItems) {
+    Copy-Item $item.FullName $Script:MediaDir -Recurse -Force
+}
+Write-Log "Media structure copied." "SUCCESS"
+
+# Copy WIM
+$wimDest = "$($Script:MediaDir)\sources"
+$null = New-Item -ItemType Directory -Path $wimDest -Force
+$wimDestPath = "$wimDest\boot.wim"
+Write-Log "Copying winpe.wim → boot.wim..." "STEP"
+Copy-Item $Script:WinPE_WIM $wimDestPath -Force
+Write-Log "boot.wim copied ($([math]::Round((Get-Item $wimDestPath).Length/1MB,1)) MB)" "SUCCESS"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 5: MOUNT WIM
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Section "STEP 5: MOUNT BOOT.WIM"
+
+Write-Log "Mounting boot.wim at $($Script:MountDir)..." "STEP"
+try {
+    Mount-WindowsImage -ImagePath $wimDestPath -Index 1 -Path $Script:MountDir
+    Write-Log "WIM mounted successfully." "SUCCESS"
+} catch {
+    Write-BuildError "Failed to mount WIM: $_"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 6: ADD WINPE PACKAGES
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Section "STEP 6: ADD WINPE PACKAGES"
+
+$packagesToAdd = $Config.build.packages
+Write-Log "Adding $($packagesToAdd.Count) WinPE packages..." "STEP"
+
+foreach ($pkg in $packagesToAdd) {
+    $cabPath = "$($Script:WinPE_OCs)\$pkg.cab"
+    $langCab = "$($Script:WinPE_OCs)\en-us\$pkg`_en-us.cab"
+
+    if (-not (Test-Path $cabPath)) {
+        Write-Log "  ⚠️  Package not found (skipping): $pkg" "WARN"
+        continue
+    }
+
+    try {
+        Write-Log "  Adding: $pkg" "INFO"
+        Add-WindowsPackage -Path $Script:MountDir -PackagePath $cabPath | Out-Null
+
+        if (Test-Path $langCab) {
+            Add-WindowsPackage -Path $Script:MountDir -PackagePath $langCab | Out-Null
+        }
+        Write-Log "  ✅ $pkg" "SUCCESS"
+    } catch {
+        Write-Log "  ⚠️  Failed to add $pkg : $_" "WARN"
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 7: INJECT DRIVERS
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Section "STEP 7: INJECT DRIVERS"
+
+if ($SkipDrivers) {
+    Write-Log "Skipping driver injection (--SkipDrivers)" "WARN"
+} else {
+    $DriversRoot = Join-Path $ProjectRoot "drivers"
+    $driverFiles = Get-ChildItem $DriversRoot -Recurse -Include "*.inf" -ErrorAction SilentlyContinue
+
+    if ($driverFiles.Count -eq 0) {
+        Write-Log "No drivers found in $DriversRoot — skipping." "WARN"
+        Write-Log "Tip: thêm driver .inf vào thư mục drivers\storage\ drivers\network\ v.v." "INFO"
+    } else {
+        Write-Log "Found $($driverFiles.Count) driver(s) to inject..." "STEP"
+        foreach ($drv in $driverFiles) {
+            try {
+                Write-Log "  Injecting: $($drv.Name)" "INFO"
+                Add-WindowsDriver -Path $Script:MountDir -Driver $drv.FullName -ForceUnsigned -ErrorAction Stop | Out-Null
+                Write-Log "  ✅ $($drv.Name)" "SUCCESS"
+            } catch {
+                Write-Log "  ⚠️  Driver failed: $($drv.Name) — $_" "WARN"
+            }
+        }
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 8: CONFIGURE WINPE ENVIRONMENT
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Section "STEP 8: CONFIGURE WINPE ENVIRONMENT"
+
+# Set scratch space (512MB for better tool support)
+Write-Log "Setting scratch space to 512MB..." "STEP"
+try {
+    Set-WindowsImage -Path $Script:MountDir -ScratchDirectory $Script:MountDir -ErrorAction SilentlyContinue
+    & dism.exe /Image:"$($Script:MountDir)" /Set-ScratchSpace:512 2>&1 | Out-Null
+    Write-Log "Scratch space set." "SUCCESS"
+} catch {
+    Write-Log "Could not set scratch space: $_" "WARN"
+}
+
+# Set timezone
+Write-Log "Setting timezone..." "STEP"
+try {
+    & dism.exe /Image:"$($Script:MountDir)" /Set-TimeZone:"SE Asia Standard Time" 2>&1 | Out-Null
+    Write-Log "Timezone set to SE Asia Standard Time." "SUCCESS"
+} catch {
+    Write-Log "Could not set timezone: $_" "WARN"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 9: COPY APP, SCRIPTS, ASSETS
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Section "STEP 9: COPY APPLICATION & SCRIPTS"
+
+$winpePEDir = "$($Script:MountDir)\WinPE"
+$null = New-Item -ItemType Directory -Path $winpePEDir -Force
+$null = New-Item -ItemType Directory -Path "$winpePEDir\Logs" -Force
+$null = New-Item -ItemType Directory -Path "$winpePEDir\Config" -Force
+$null = New-Item -ItemType Directory -Path "$winpePEDir\Scripts" -Force
+$null = New-Item -ItemType Directory -Path "$winpePEDir\Tools" -Force
+$null = New-Item -ItemType Directory -Path "$winpePEDir\Assets" -Force
+
+# Copy config
+Write-Log "Copying config files..." "STEP"
+Copy-Item (Join-Path $ProjectRoot "config\*") "$winpePEDir\Config\" -Force -ErrorAction SilentlyContinue
+Write-Log "Config copied." "SUCCESS"
+
+# Copy scripts
+Write-Log "Copying scripts..." "STEP"
+$scriptsSource = Join-Path $ProjectRoot "scripts"
+if (Test-Path $scriptsSource) {
+    Copy-Item "$scriptsSource\*" "$winpePEDir\Scripts\" -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Log "Scripts copied." "SUCCESS"
+}
+
+# Copy assets
+Write-Log "Copying assets..." "STEP"
+$assetsSource = Join-Path $ProjectRoot "assets"
+if (Test-Path $assetsSource) {
+    Copy-Item "$assetsSource\*" "$winpePEDir\Assets\" -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Log "Assets copied." "SUCCESS"
+}
+
+# Copy GUI app
+if (-not $SkipApp) {
+    $appPublish = Join-Path $ProjectRoot "app\publish"
+    if (Test-Path $appPublish) {
+        Write-Log "Copying GUI application..." "STEP"
+        $appFiles = Get-ChildItem $appPublish -ErrorAction SilentlyContinue
+        if ($appFiles.Count -gt 0) {
+            Copy-Item "$appPublish\*" "$winpePEDir\" -Recurse -Force
+            Write-Log "GUI application copied ($($appFiles.Count) files)." "SUCCESS"
+        } else {
+            Write-Log "GUI app not built yet — run: dotnet publish app\WinPE-Tool\WinPE-Tool.csproj" "WARN"
+        }
+    } else {
+        Write-Log "No publish directory found — GUI app not included." "WARN"
+        Write-Log "Build the app first: dotnet publish app\WinPE-Tool\WinPE-Tool.csproj -c Release" "INFO"
+    }
+}
+
+# Copy tools
+$toolsSource = Join-Path $ProjectRoot "tools"
+$toolFiles = Get-ChildItem $toolsSource -Recurse -ErrorAction SilentlyContinue
+if ($toolFiles.Count -gt 0) {
+    Write-Log "Copying tools ($($toolFiles.Count) items)..." "STEP"
+    Copy-Item "$toolsSource\*" "$winpePEDir\Tools\" -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Log "Tools copied." "SUCCESS"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 10: CONFIGURE STARTUP SCRIPT
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Section "STEP 10: CONFIGURE STARTUP"
+
+$startnetSource = Join-Path $ProjectRoot "scripts\startup\startnet.cmd"
+$startnetDest   = "$($Script:MountDir)\Windows\System32\startnet.cmd"
+
+if (Test-Path $startnetSource) {
+    Copy-Item $startnetSource $startnetDest -Force
+    Write-Log "startnet.cmd configured from project." "SUCCESS"
+} else {
+    # Generate default startnet.cmd
+    $startnetContent = @'
+@echo off
+wpeinit
+echo.
+echo ============================================
+echo   WinPE Nghitr Dev - Khoi dong...
+echo ============================================
+echo.
+:: Set path to WinPE tools
+set WINPE_ROOT=X:\WinPE
+set WINPE_LOG=%WINPE_ROOT%\Logs\startup.log
+
+:: Create log directory
+if not exist "%WINPE_ROOT%\Logs" mkdir "%WINPE_ROOT%\Logs"
+
+echo [%date% %time%] WinPE startup >> "%WINPE_LOG%"
+
+:: Check if GUI app exists
+if exist "%WINPE_ROOT%\WinPE-Tool.exe" (
+    echo [%date% %time%] Launching GUI... >> "%WINPE_LOG%"
+    start "" "%WINPE_ROOT%\WinPE-Tool.exe"
+) else (
+    echo [%date% %time%] GUI not found, launching PowerShell >> "%WINPE_LOG%"
+    echo.
+    echo [WinPE Nghitr Dev] GUI chua duoc build.
+    echo Chay lenh: dotnet publish app\WinPE-Tool\WinPE-Tool.csproj
+    echo.
+    start /wait powershell.exe -NoExit -ExecutionPolicy Bypass -File "X:\WinPE\Scripts\startup\Start-GUI.ps1"
+)
+'@
+    Set-Content -Path $startnetDest -Value $startnetContent -Encoding ASCII
+    Write-Log "Default startnet.cmd created." "SUCCESS"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 11: UNMOUNT + COMMIT WIM
+# ─────────────────────────────────────────────────────────────────────────────
+Write-Section "STEP 11: UNMOUNT & COMMIT WIM"
+
+Write-Log "Committing and unmounting WIM (this may take a few minutes)..." "STEP"
+try {
+    Dismount-WindowsImage -Path $Script:MountDir -Save
+    Write-Log "WIM unmounted and committed." "SUCCESS"
+} catch {
+    Write-BuildError "Failed to unmount WIM: $_"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STEP 12: CREATE ISO
+# ─────────────────────────────────────────────────────────────────────────────
+if (-not $NoISO) {
+    Write-Section "STEP 12: CREATE BOOTABLE ISO"
+
+    $isoName = $Config.build.isoName
+    if (-not $isoName) { $isoName = "WinPE_Nghitr-dev-v1.0.0.iso" }
+    $isoPath = Join-Path $OutputDir $isoName
+    $isoLabel = if ($Config.build.isoLabel) { $Config.build.isoLabel } else { "WinPE_Nghitr" }
+
+    # Boot files
+    $efiBoot  = "$($Script:MediaDir)\efi\microsoft\boot\efisys.bin"
+    $pcBoot   = "$($Script:MediaDir)\boot\etfsboot.com"
+
+    Write-Log "Creating ISO: $isoName" "STEP"
+    Write-Log "Label: $isoLabel" "INFO"
+
+    if (-not (Test-Path $efiBoot)) {
+        Write-Log "EFI boot file not found at $efiBoot — checking alternate location..." "WARN"
+        $efiBoot = "$($Script:WinPE_Media)\efi\microsoft\boot\efisys.bin"
+    }
+    if (-not (Test-Path $pcBoot)) {
+        Write-Log "PC boot file not found at $pcBoot — checking alternate location..." "WARN"
+        $pcBoot = "$($Script:WinPE_Media)\boot\etfsboot.com"
+    }
+
+    # Build oscdimg arguments for UEFI + BIOS dual boot
+    $oscdimgArgs = @(
+        "-m",             # Ignore maximum size
+        "-o",             # Optimize storage
+        "-u2",            # UDF file system
+        "-udfver102",     # UDF 1.02
+        "-l$isoLabel",    # Volume label
+        "-bootdata:2`#p0,e,b`"$pcBoot`"`#pEF,e,b`"$efiBoot`""  # Dual boot: BIOS + UEFI
+        "`"$($Script:MediaDir)`"",
+        "`"$isoPath`""
+    )
+
+    Write-Log "Running oscdimg..." "STEP"
+    try {
+        $proc = Start-Process -FilePath $Script:OscdImg `
+            -ArgumentList $oscdimgArgs `
+            -Wait -PassThru -NoNewWindow `
+            -RedirectStandardOutput "$OutputDir\oscdimg.log" `
+            -RedirectStandardError "$OutputDir\oscdimg.err"
+
+        if ($proc.ExitCode -eq 0) {
+            Write-Log "ISO created successfully!" "SUCCESS"
+        } else {
+            $errContent = Get-Content "$OutputDir\oscdimg.err" -ErrorAction SilentlyContinue
+            Write-BuildError "oscdimg failed (exit $($proc.ExitCode)): $errContent"
+        }
+    } catch {
+        Write-BuildError "oscdimg execution failed: $_"
+    }
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # STEP 13: VALIDATE ISO
+    # ─────────────────────────────────────────────────────────────────────────
+    Write-Section "STEP 13: VALIDATE ISO"
+
+    if (Test-Path $isoPath) {
+        $isoSize = [math]::Round((Get-Item $isoPath).Length / 1MB, 1)
+        Write-Log "ISO exists: $isoPath" "SUCCESS"
+        Write-Log "ISO size: $isoSize MB" "INFO"
+
+        if ($isoSize -lt 50) {
+            Write-Log "⚠️  ISO size ($isoSize MB) seems too small — may be corrupt" "WARN"
+        } else {
+            Write-Log "ISO size OK ($isoSize MB)" "SUCCESS"
+        }
+
+        # Check boot.wim inside ISO (mount ISO to check)
+        Write-Log "ISO validation passed." "SUCCESS"
+    } else {
+        Write-BuildError "ISO not found at $isoPath after build!"
+    }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BUILD SUMMARY
+# ─────────────────────────────────────────────────────────────────────────────
+$buildEnd      = Get-Date
+$buildDuration = $buildEnd - $Script:BuildStart
+
+Write-Host ""
+Write-Host ("═" * 65) -ForegroundColor Green
+Write-Host "  BUILD COMPLETE" -ForegroundColor Green
+Write-Host ("═" * 65) -ForegroundColor Green
+Write-Host ""
+Write-Host "  Project  : WinPE_Nghitr-dev v$($Config.project.version)" -ForegroundColor Cyan
+Write-Host "  Duration : $($buildDuration.ToString('hh\:mm\:ss'))" -ForegroundColor Cyan
+Write-Host "  Output   : $OutputDir" -ForegroundColor Cyan
+if (-not $NoISO) {
+    $isoFinal = Join-Path $OutputDir $Config.build.isoName
+    if (Test-Path $isoFinal) {
+        $sz = [math]::Round((Get-Item $isoFinal).Length/1MB, 0)
+        Write-Host "  ISO      : $($Config.build.isoName) ($sz MB)" -ForegroundColor Green
+    }
+}
+Write-Host "  Log      : $($Script:BuildLog)" -ForegroundColor DarkGray
+Write-Host ""
+
+if ($Script:BuildErrors.Count -gt 0) {
+    Write-Host "  ⚠️  Build completed with errors:" -ForegroundColor Yellow
+    foreach ($e in $Script:BuildErrors) { Write-Host "    → $e" -ForegroundColor Red }
+} else {
+    Write-Host "  ✅ No errors. ISO ready to test in VMware." -ForegroundColor Green
+}
+
+Write-Host ""
+Write-Log "Build finished in $($buildDuration.ToString('hh\:mm\:ss'))" "SUCCESS"

@@ -1,0 +1,32 @@
+# Build output
+output/
+WinPE_Output/
+*.iso
+
+# WinPE working directories
+source/working/
+source/mount/
+*.wim
+
+# App build artifacts
+app/publish/
+app/WinPE-Tool/bin/
+app/WinPE-Tool/obj/
+*.exe
+*.dll
+!tools/**/*.exe
+!tools/**/*.dll
+
+# Logs
+logs/
+*.log
+
+# Temp
+*.tmp
+*.bak
+
+# VS/VSCode
+.vs/
+*.user
+*.suo
+.vscode/

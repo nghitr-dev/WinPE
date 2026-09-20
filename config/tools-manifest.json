@@ -1,0 +1,95 @@
+{
+  "tools": [
+    {
+      "id": "cmd",
+      "name": "Command Prompt",
+      "nameVi": "Command Prompt",
+      "category": "SystemTools",
+      "description": "Windows Command Prompt",
+      "executable": "cmd.exe",
+      "arguments": "",
+      "adminRequired": false,
+      "enabled": true,
+      "builtIn": true,
+      "icon": "cmd"
+    },
+    {
+      "id": "powershell",
+      "name": "PowerShell",
+      "nameVi": "PowerShell",
+      "category": "SystemTools",
+      "description": "Windows PowerShell",
+      "executable": "powershell.exe",
+      "arguments": "-NoExit",
+      "adminRequired": false,
+      "enabled": true,
+      "builtIn": true,
+      "icon": "powershell"
+    },
+    {
+      "id": "regedit",
+      "name": "Registry Editor",
+      "nameVi": "Registry Editor",
+      "category": "SystemTools",
+      "description": "Windows Registry Editor",
+      "executable": "regedit.exe",
+      "arguments": "",
+      "adminRequired": true,
+      "enabled": true,
+      "builtIn": true,
+      "icon": "registry"
+    },
+    {
+      "id": "notepad",
+      "name": "Notepad",
+      "nameVi": "Notepad",
+      "category": "SystemTools",
+      "description": "Text editor",
+      "executable": "notepad.exe",
+      "arguments": "",
+      "adminRequired": false,
+      "enabled": true,
+      "builtIn": true,
+      "icon": "notepad"
+    },
+    {
+      "id": "diskpart",
+      "name": "DiskPart",
+      "nameVi": "DiskPart",
+      "category": "DiskTools",
+      "description": "Disk partition management CLI",
+      "executable": "diskpart.exe",
+      "arguments": "",
+      "adminRequired": true,
+      "enabled": true,
+      "builtIn": true,
+      "icon": "disk"
+    },
+    {
+      "id": "taskmgr",
+      "name": "Task Manager",
+      "nameVi": "Task Manager",
+      "category": "SystemTools",
+      "description": "Windows Task Manager",
+      "executable": "taskmgr.exe",
+      "arguments": "",
+      "adminRequired": false,
+      "enabled": true,
+      "builtIn": true,
+      "icon": "taskmgr"
+    },
+    {
+      "id": "msinfo32",
+      "name": "System Information",
+      "nameVi": "Thông tin hệ thống",
+      "category": "Hardware",
+      "description": "System information tool",
+      "executable": "msinfo32.exe",
+      "arguments": "",
+      "adminRequired": false,
+      "enabled": true,
+      "builtIn": true,
+      "icon": "sysinfo"
+    }
+  ]
+}
