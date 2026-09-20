@@ -1,38 +1,31 @@
 @echo off
-:: ============================================================
-:: WinPE Nghitr Dev — 1-Click Build ISO Script
-:: Chuột phải vào file này -> Chọn "Run as administrator"
-:: ============================================================
-title WinPE Nghitr Dev - Build ISO
+setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
+title WinPE Nghitr Dev - Build ISO
+
 echo ============================================================
-echo   WinPE Nghitr Dev - He thong dong goi ISO tu dong
+echo   WinPE Nghitr Dev - Build ISO
 echo ============================================================
 echo.
 
-:: Kiểm tra quyền Administrator
+rem Check Administrator privileges
 net session >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [!] CHU Y: Script nay bat buoc phai chay bang quyen Administrator!
-    echo.
-    echo -> Hay click CHUOT PHAI vao file build_iso.bat nay
-    echo -> Chon "Run as administrator" (Chay voi tu cach quan tri vien)
-    echo.
-    pause
-    exit /b 1
+    echo Dang yeu cau quyen Administrator...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd.exe -ArgumentList '/c \"\"%~f0\"\"' -Verb RunAs"
+    exit /b
 )
 
-echo [OK] Da co quyen Administrator.
-echo Dang khoi chay build ISO tu dong...
-echo (Qua trinh nay se mount WIM, nap packages, copy app va tao file ISO)
+echo [OK] Quyen Administrator hop le.
+echo Dang khoi chay build WinPE ISO...
 echo.
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "build\Build-WinPE.ps1" -Clean
 
 echo.
 echo ============================================================
-echo Build ket thuc. Hay kiem tra file ISO trong thu muc output\
+echo Hoan tat! File ISO o thu muc: output\
 echo ============================================================
 echo.
 pause
